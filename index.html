@@ -1,0 +1,54 @@
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      .gamepad .cubes-ctnr {
+        background-color: gray;
+      }
+      
+      .gamepad .cubes-ctnr .mine-cube {
+        display: inline-block;
+        vertical-align: top;
+        border: 1px solid #333;
+        box-sizing: border-box;
+      }
+
+      .gamepad .cubes-ctnr .mine-cube.open {
+        background-color: aliceblue;
+        color: lightseagreen;
+      }
+
+      .gamepad .cubes-ctnr .mine-cube.mine {
+        background-color: green;
+        color: #fff;
+      }
+
+      .gamepad .cubes-ctnr .mine-cube.mine.hit {
+        background-color: red;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app-ctnr">
+      <h1>Miner</h1>
+      <hr>
+      <div id="game-panel" class="gamepad">
+        <div class="rest-mines">Rest mine: --</div>
+        <div class="cubes-ctnr"></div>
+      </div>
+    </div>
+
+    <script src="./index.js"></script>
+    <script>
+      const game = new Game({
+        width: 9,
+        height: 9,
+        mines: 10,
+        gamepad: '#game-panel'
+      })
+
+      console.log(game)
+    </script>
+  </body>
+</html>
