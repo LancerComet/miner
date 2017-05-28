@@ -19,6 +19,10 @@ class Cube {
   x: number = 0
   y: number = 0
 
+  private leftMouseDown: boolean = false
+  private rightMouseDown: boolean = false
+  private stopAction: boolean = false
+
   private _isOpen = false
   get isOpen () {
     return this._isOpen
@@ -100,6 +104,20 @@ class Cube {
   }
 
   /**
+   * Set cube on-select status.
+   * 
+   * @param { boolean } newVal
+   * @memberof Cube
+   */
+  set onSelect (newVal) {
+    const className = this.cubeElement.className
+
+    this.cubeElement.className = newVal
+      ? className + (className.indexOf('on-select') > -1 ? '' : ' on-select')
+      : className.replace(' on-select', '')
+  }
+
+  /**
    * Find all cubes nearby.
    * 
    * @returns {Cube[]} 
@@ -127,7 +145,9 @@ class Cube {
     element.className = 'mine-cube'
     element.style.width = CUBE_SIZE + 'px'
     element.style.height = CUBE_SIZE + 'px'
-    element.addEventListener('click', this.onClick.bind(this))
+    element.addEventListener('mousedown', this.onMouseDown.bind(this))
+    element.addEventListener('mouseup', this.onMouseUp.bind(this))
+    element.addEventListener('contextmenu', this.onContextMenu.bind(this))
 
     this.cubeElement = element
   }
@@ -143,15 +163,80 @@ class Cube {
   }
 
   /**
-   * Click event handler.
+   * Mouse down event handler.
+   * 
+   * @private
+   * @param {Event} event 
+   * 
+   * @memberof Cube
+   */
+  private onMouseDown (event: MouseEvent) {
+    event.preventDefault()    
+    this.onSelect = true
+
+    const button = event.button
+    switch (button) {
+      case 0:
+        this.leftMouseDown = true
+        break
+
+      case 2:
+        this.rightMouseDown = true
+        break
+    }
+
+    if (this.leftMouseDown && this.rightMouseDown) {
+      this.bothMouseClick()
+    }
+  }
+
+  /**
+   * Mouse up event handler.
    * 
    * @private
    * @param {any} event 
    * @memberof Cube
    */
-  private onClick (event) {
-    // Return when game is over.
-    if (this.game.gameIsOver) { return }
+  private onMouseUp (event: MouseEvent) {
+    this.onSelect = false
+    const button = event.button
+
+    // Release preview area.
+    this.setPreviewArea(false)
+
+    switch (button) {
+      // Left mouse.
+      case 0:
+        this.leftMouseDown = false
+        this.leftMouseUp()
+        if (!this.rightMouseDown) {
+          this.stopAction = false
+        }
+        break
+
+      // Right mouse.
+      case 2:
+        // Use a timer to prevent left mouseup event to be triggered.
+        this.rightMouseDown = false
+        this.rightMouseUp()        
+        if (!this.leftMouseDown) {
+          this.stopAction = false
+        }
+        break
+    }
+  }
+
+  /**
+   * Left mouse up event.
+   * 
+   * @private
+   * @returns 
+   * 
+   * @memberof Cube
+   */
+  private leftMouseUp () {
+    // Return when game is over or action is stopped.
+    if (this.game.gameIsOver || this.stopAction) { return }
 
     // Open this cube.
     this.isOpen = true
@@ -169,11 +254,59 @@ class Cube {
       this.openSurroundingCubes()
     }
 
-    // TODO: Check if game can be over now.
+    // Check if game can be over now.
     if (this.game.gameCanBeOver){
       this.game.setGameOver()
       this.game.openAllCubes()
     }
+  }
+
+  /**
+   * Right mouse up event.
+   * 
+   * @private
+   * 
+   * @memberof Cube
+   */
+  private rightMouseUp () {
+    if (this.stopAction) { return }
+  }
+
+  /**
+   * Both mouses click.
+   * 
+   * @private
+   * @memberof Cube
+   */
+  private bothMouseClick () {
+    this.stopAction = true
+    this.setPreviewArea(true)
+  }
+
+  /**
+   * Set preview area status.
+   * 
+   * @private
+   * @param {boolean} [status=false] 
+   * 
+   * @memberof Cube
+   */
+  private setPreviewArea (status = false) {
+    this.findNearbyCubes().forEach(item => {
+      if (item) { item.onSelect = status }
+    })
+  }
+ 
+  /**
+   * Context menu event handler.
+   * 
+   * @private
+   * @param {Event} event 
+   * 
+   * @memberof Cube
+   */
+  private onContextMenu (event: Event) {
+    event.preventDefault()
   }
 
   /**
@@ -259,6 +392,7 @@ class Game {
    * @memberof Game
    */
   get unfoundMines () {
+    return false
   }
 
   /**

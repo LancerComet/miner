@@ -17,6 +17,9 @@ var Cube = (function () {
         this.cubeElement = null;
         this.x = 0;
         this.y = 0;
+        this.leftMouseDown = false;
+        this.rightMouseDown = false;
+        this.stopAction = false;
         this._isOpen = false;
         this._flagMark = false;
         this._unknownMark = false;
@@ -122,6 +125,22 @@ var Cube = (function () {
         enumerable: true,
         configurable: true
     });
+    Object.defineProperty(Cube.prototype, "onSelect", {
+        /**
+         * Set cube on-select status.
+         *
+         * @param { boolean } newVal
+         * @memberof Cube
+         */
+        set: function (newVal) {
+            var className = this.cubeElement.className;
+            this.cubeElement.className = newVal
+                ? className + (className.indexOf('on-select') > -1 ? '' : ' on-select')
+                : className.replace(' on-select', '');
+        },
+        enumerable: true,
+        configurable: true
+    });
     /**
      * Find all cubes nearby.
      *
@@ -149,7 +168,9 @@ var Cube = (function () {
         element.className = 'mine-cube';
         element.style.width = CUBE_SIZE + 'px';
         element.style.height = CUBE_SIZE + 'px';
-        element.addEventListener('click', this.onClick.bind(this));
+        element.addEventListener('mousedown', this.onMouseDown.bind(this));
+        element.addEventListener('mouseup', this.onMouseUp.bind(this));
+        element.addEventListener('contextmenu', this.onContextMenu.bind(this));
         this.cubeElement = element;
     };
     /**
@@ -162,15 +183,72 @@ var Cube = (function () {
         this.cubeElement.textContent = this.label;
     };
     /**
-     * Click event handler.
+     * Mouse down event handler.
+     *
+     * @private
+     * @param {Event} event
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.onMouseDown = function (event) {
+        event.preventDefault();
+        this.onSelect = true;
+        var button = event.button;
+        switch (button) {
+            case 0:
+                this.leftMouseDown = true;
+                break;
+            case 2:
+                this.rightMouseDown = true;
+                break;
+        }
+        if (this.leftMouseDown && this.rightMouseDown) {
+            this.bothMouseClick();
+        }
+    };
+    /**
+     * Mouse up event handler.
      *
      * @private
      * @param {any} event
      * @memberof Cube
      */
-    Cube.prototype.onClick = function (event) {
-        // Return when game is over.
-        if (this.game.gameIsOver) {
+    Cube.prototype.onMouseUp = function (event) {
+        this.onSelect = false;
+        var button = event.button;
+        // Release preview area.
+        this.setPreviewArea(false);
+        switch (button) {
+            // Left mouse.
+            case 0:
+                this.leftMouseDown = false;
+                this.leftMouseUp();
+                if (!this.rightMouseDown) {
+                    this.stopAction = false;
+                }
+                break;
+            // Right mouse.
+            case 2:
+                // Use a timer to prevent left mouseup event to be triggered.
+                this.rightMouseDown = false;
+                this.rightMouseUp();
+                if (!this.leftMouseDown) {
+                    this.stopAction = false;
+                }
+                break;
+        }
+    };
+    /**
+     * Left mouse up event.
+     *
+     * @private
+     * @returns
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.leftMouseUp = function () {
+        // Return when game is over or action is stopped.
+        if (this.game.gameIsOver || this.stopAction) {
             return;
         }
         // Open this cube.
@@ -186,11 +264,60 @@ var Cube = (function () {
         if (nearbyMines === 0) {
             this.openSurroundingCubes();
         }
-        // TODO: Check if game can be over now.
+        // Check if game can be over now.
         if (this.game.gameCanBeOver) {
             this.game.setGameOver();
             this.game.openAllCubes();
         }
+    };
+    /**
+     * Right mouse up event.
+     *
+     * @private
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.rightMouseUp = function () {
+        if (this.stopAction) {
+            return;
+        }
+    };
+    /**
+     * Both mouses click.
+     *
+     * @private
+     * @memberof Cube
+     */
+    Cube.prototype.bothMouseClick = function () {
+        this.stopAction = true;
+        this.setPreviewArea(true);
+    };
+    /**
+     * Set preview area status.
+     *
+     * @private
+     * @param {boolean} [status=false]
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.setPreviewArea = function (status) {
+        if (status === void 0) { status = false; }
+        this.findNearbyCubes().forEach(function (item) {
+            if (item) {
+                item.onSelect = status;
+            }
+        });
+    };
+    /**
+     * Context menu event handler.
+     *
+     * @private
+     * @param {Event} event
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.onContextMenu = function (event) {
+        event.preventDefault();
     };
     /**
      * Open surrounding cubes.
@@ -283,6 +410,7 @@ var Game = (function () {
          * @memberof Game
          */
         get: function () {
+            return false;
         },
         enumerable: true,
         configurable: true

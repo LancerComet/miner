@@ -2,15 +2,16 @@
   <head>
     <meta charset="utf-8">
     <style>
-      .gamepad .cubes-ctnr {
-        background-color: gray;
-      }
-      
       .gamepad .cubes-ctnr .mine-cube {
         display: inline-block;
+        background-color: lightgray;        
         vertical-align: top;
         border: 1px solid #333;
         box-sizing: border-box;
+      }
+
+      .gamepad .cubes-ctnr .mine-cube.on-select {
+        background-color: darkgray;
       }
 
       .gamepad .cubes-ctnr .mine-cube.open {
