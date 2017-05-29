@@ -20,11 +20,24 @@ var Cube = (function () {
         this.leftMouseDown = false;
         this.rightMouseDown = false;
         this.stopAction = false;
+        this.bothMousesTriggered = false;
         this.mouseDownEvent = null;
         this.mouseUpEvent = null;
         this.contextEvent = null;
         this._isOpen = false;
+        /**
+         * Flag mark.
+         *
+         * @private
+         * @memberof Cube
+         */
         this._flagMark = false;
+        /**
+         * Unknown mark.
+         *
+         * @private
+         * @memberof Cube
+         */
         this._unknownMark = false;
         /**
          * Whether is a mine cube.
@@ -54,19 +67,6 @@ var Cube = (function () {
                 this.cubeElement.className = newVal
                     ? className + (className.indexOf('open') < 0 ? ' open' : '')
                     : className.replace(' open', '');
-                // Set mine class name.
-                if (this.isMine) {
-                    this.cubeElement.className = newVal
-                        ? className + ' mine'
-                        : className.replace(' mine', '');
-                }
-                // Mark setting case.
-            }
-            else {
-                this.cubeElement.className = this.cubeElement.className.replace(/ (mine|mark)/g, '');
-                this.cubeElement.className = newVal
-                    ? this.cubeElement.className + ' mark'
-                    : this.cubeElement.className.replace(' mark', '');
             }
             this._isOpen = newVal;
             this.setCubeElementLabel();
@@ -83,6 +83,11 @@ var Cube = (function () {
             if (newVal && this.unknownMark) {
                 this.unknownMark = false;
             }
+            var className = this.cubeElement.className;
+            this.cubeElement.className = newVal
+                ? className + (className.indexOf(' mark') < 0 ? ' mark' : '')
+                : className.replace(' mark', '');
+            this.setCubeElementLabel();
         },
         enumerable: true,
         configurable: true
@@ -96,6 +101,11 @@ var Cube = (function () {
             if (newVal && this.flagMark) {
                 this.flagMark = false;
             }
+            var className = this.cubeElement.className;
+            this.cubeElement.className = newVal
+                ? className + (className.indexOf(' mark') < 0 ? ' mark' : '')
+                : className.replace(' mark', '');
+            this.setCubeElementLabel();
         },
         enumerable: true,
         configurable: true
@@ -167,6 +177,12 @@ var Cube = (function () {
         enumerable: true,
         configurable: true
     });
+    Cube.prototype.setMineClassName = function () {
+        this.cubeElement.className += this.cubeElement.className.indexOf(' mine') < 0 ? ' mine' : '';
+    };
+    Cube.prototype.removeMineClassName = function () {
+        this.cubeElement.className = this.cubeElement.className.replace(' mine', '');
+    };
     /**
      * Find all cubes nearby.
      *
@@ -222,6 +238,9 @@ var Cube = (function () {
      */
     Cube.prototype.onMouseDown = function (event) {
         event.preventDefault();
+        if (this.game.gameIsOver) {
+            return;
+        }
         this.onSelect = true;
         var button = event.button;
         switch (button) {
@@ -267,6 +286,17 @@ var Cube = (function () {
                 }
                 break;
         }
+        if (this.bothMousesTriggered) {
+            // If marked cube count is equal to nearby mine count, open all surrounding cubes.
+            var flagMarkedCubesInPreviewArea = this.findNearbyCubes()
+                .filter(function (item) { return item && item.flagMark; })
+                .length;
+            if (flagMarkedCubesInPreviewArea === this.nearbyMines.length) {
+                this.openSurroundingCubes();
+                this.game.gameCanBeOver && this.game.setGameWin();
+            }
+            this.bothMousesTriggered = false;
+        }
     };
     /**
      * Left mouse up event.
@@ -285,20 +315,16 @@ var Cube = (function () {
         this.isOpen = true;
         // Hit this mine cube.
         if (this.isMine) {
-            this.cubeElement.className += ' hit';
-            this.game.openMineCubes();
-            return this.game.setGameOver();
+            this.setHitted();
+            return this.game.setGameLose();
         }
         // Check and open nearby mines when there are no mine cubes surrounding.
         var nearbyMines = this.nearbyMines.length;
         if (nearbyMines === 0) {
-            this.openSurroundingCubes();
+            this.openSafeCubes();
         }
         // Check if game can be over now.
-        if (this.game.gameCanBeOver) {
-            this.game.setGameOver();
-            this.game.openAllCubes();
-        }
+        this.game.gameCanBeOver && this.game.setGameWin();
     };
     /**
      * Right mouse up event.
@@ -320,8 +346,18 @@ var Cube = (function () {
      * @memberof Cube
      */
     Cube.prototype.bothMousesDown = function () {
+        this.bothMousesTriggered = true;
         this.stopAction = true;
         this.setPreviewArea(true);
+    };
+    /**
+     * Set this mine cube to hitted status.
+     *
+     * @private
+     * @memberof Cube
+     */
+    Cube.prototype.setHitted = function () {
+        this.cubeElement.className += ' hit';
     };
     /**
      * Set preview area status.
@@ -334,7 +370,7 @@ var Cube = (function () {
     Cube.prototype.setPreviewArea = function (status) {
         if (status === void 0) { status = false; }
         this.findNearbyCubes().forEach(function (item) {
-            if (item) {
+            if (item && !item.flagMark && !item.unknownMark) {
                 item.onSelect = status;
             }
         });
@@ -380,12 +416,13 @@ var Cube = (function () {
         }
     };
     /**
-     * Open surrounding cubes.
-     * Triggered when this cube is a blank one.
+     * Open surrounding safe cubes.
      *
+     * @param {boolean} onlySurrounding
      * @memberof Cube
      */
-    Cube.prototype.openSurroundingCubes = function () {
+    Cube.prototype.openSafeCubes = function (onlySurrounding) {
+        if (onlySurrounding === void 0) { onlySurrounding = false; }
         var nearbyCubes = this.findNearbyCubes();
         nearbyCubes.forEach(function (cube) {
             // Skip mine cube, none cube, open cube.
@@ -396,7 +433,30 @@ var Cube = (function () {
             cube.isOpen = true;
             // Check nearby mines.
             var nearbyMines = cube.nearbyMines.length;
-            nearbyMines < 1 && cube.openSurroundingCubes();
+            nearbyMines < 1 && !onlySurrounding && cube.openSafeCubes();
+        });
+    };
+    /**
+     * Open all surrounding cubes.
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.openSurroundingCubes = function () {
+        var _this = this;
+        var nearbyCubes = this.findNearbyCubes();
+        nearbyCubes.some(function (cube) {
+            if (!cube || cube.flagMark || cube.unknownMark) {
+                return;
+            }
+            cube.isOpen = true;
+            if (cube.isMine) {
+                cube.setHitted();
+                _this.game.setGameLose();
+                return true;
+            }
+            if (cube.nearbyMines.length < 1) {
+                cube.openSafeCubes();
+            }
         });
     };
     /**
@@ -567,7 +627,7 @@ var Game = (function () {
     Game.prototype.refreshUI = function () {
         var gamepad = this.gamepad;
         // Refresh rest mines.
-        gamepad.querySelector('.rest-mines').textContent = "Rest mine: " + this.minesToSolve;
+        gamepad.querySelector('.rest-mines').textContent = "Rest mines: " + this.minesToSolve;
     };
     Game.prototype.setGamepadSize = function () {
         var gamepad = this.gamepad;
@@ -590,9 +650,10 @@ var Game = (function () {
      * @memberof Game
      */
     Game.prototype.openMineCubes = function () {
-        this.cubes.forEach(function (item) {
-            if (item.isMine) {
-                item.isOpen = true;
+        this.cubes.forEach(function (cube) {
+            if (cube.isMine) {
+                cube.isOpen = true;
+                cube.setMineClassName();
             }
         });
     };
@@ -602,8 +663,13 @@ var Game = (function () {
      * @memberof Game
      */
     Game.prototype.openAllCubes = function () {
-        this.cubes.forEach(function (item) {
-            item.isOpen = true;
+        this.cubes.forEach(function (cube) {
+            cube.isOpen = true;
+            cube.flagMark = false;
+            cube.unknownMark = false;
+            if (cube.isMine) {
+                cube.setMineClassName();
+            }
         });
     };
     /**
@@ -617,13 +683,35 @@ var Game = (function () {
         });
     };
     /**
-     * Game over young man!
+     * Game is over.
      *
      * @memberof Game
      */
     Game.prototype.setGameOver = function () {
         console.info('Game over.');
         this.gameIsOver = true;
+    };
+    /**
+     * You win this game.
+     *
+     * @memberof Game
+     */
+    Game.prototype.setGameWin = function () {
+        console.log('You win!');
+        this.gamepad.querySelector('.rest-mines').textContent = "You win!";
+        this.setGameOver();
+        this.openAllCubes();
+    };
+    /**
+     * Game over young man!
+     *
+     * @memberof Game
+     */
+    Game.prototype.setGameLose = function () {
+        console.log('Game over young man!');
+        this.gamepad.querySelector('.rest-mines').textContent = "Game over young man!";
+        this.setGameOver();
+        this.openMineCubes();
     };
     /**
      * Start new game.

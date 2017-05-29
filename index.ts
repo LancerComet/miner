@@ -23,6 +23,8 @@ class Cube {
   private rightMouseDown: boolean = false
   private stopAction: boolean = false
 
+  private bothMousesTriggered: boolean = false  
+
   private mouseDownEvent = null
   private mouseUpEvent = null
   private contextEvent = null
@@ -40,46 +42,60 @@ class Cube {
       this.cubeElement.className = newVal
         ? className + (className.indexOf('open') < 0 ? ' open' : '')
         : className.replace(' open', '')
-
-      // Set mine class name.
-      if (this.isMine) {
-        this.cubeElement.className = newVal
-          ? className + ' mine'
-          : className.replace(' mine', '')
-      }
-
-    // Mark setting case.
-    } else {
-      this.cubeElement.className = this.cubeElement.className.replace(/ (mine|mark)/g, '')
-      this.cubeElement.className = newVal
-        ? this.cubeElement.className + ' mark'
-        : this.cubeElement.className.replace(' mark', '')
     }
 
     this._isOpen = newVal
     this.setCubeElementLabel()
   }
 
+  /**
+   * Flag mark.
+   * 
+   * @private
+   * @memberof Cube
+   */
   private _flagMark = false
   get flagMark () {
     return this._flagMark
   }
   set flagMark (newVal) {
     this._flagMark = newVal
+    
     if (newVal && this.unknownMark) {
       this.unknownMark = false
     }
+
+    const className = this.cubeElement.className
+    this.cubeElement.className = newVal
+      ? className + (className.indexOf(' mark') < 0 ? ' mark' : '')
+      : className.replace(' mark', '')
+
+    this.setCubeElementLabel()
   }
 
+  /**
+   * Unknown mark.
+   * 
+   * @private
+   * @memberof Cube
+   */
   private _unknownMark = false
   get unknownMark () {
     return this._unknownMark
   }
   set unknownMark (newVal) {
     this._unknownMark = newVal
+
     if (newVal && this.flagMark) {
       this.flagMark = false
     }
+
+    const className = this.cubeElement.className
+    this.cubeElement.className = newVal
+      ? className + (className.indexOf(' mark') < 0 ? ' mark' : '')
+      : className.replace(' mark', '')
+
+    this.setCubeElementLabel()
   }
 
   /**
@@ -135,6 +151,14 @@ class Cube {
     this.cubeElement.className = newVal
       ? className + (className.indexOf('on-select') > -1 ? '' : ' on-select')
       : className.replace(' on-select', '')
+  }
+
+  setMineClassName () {
+    this.cubeElement.className += this.cubeElement.className.indexOf(' mine') < 0 ? ' mine' : ''
+  }
+
+  removeMineClassName () {
+    this.cubeElement.className = this.cubeElement.className.replace(' mine', '')
   }
 
   /**
@@ -197,6 +221,8 @@ class Cube {
    */
   private onMouseDown (event: MouseEvent) {
     event.preventDefault()    
+    if (this.game.gameIsOver) { return }
+
     this.onSelect = true
 
     const button = event.button
@@ -249,6 +275,20 @@ class Cube {
         }
         break
     }
+
+    if (this.bothMousesTriggered) {
+      // If marked cube count is equal to nearby mine count, open all surrounding cubes.
+      const flagMarkedCubesInPreviewArea = this.findNearbyCubes()
+        .filter(item => item && item.flagMark)
+        .length
+
+      if (flagMarkedCubesInPreviewArea === this.nearbyMines.length) {
+        this.openSurroundingCubes()
+        this.game.gameCanBeOver && this.game.setGameWin()
+      }
+
+      this.bothMousesTriggered = false
+    }
   }
 
   /**
@@ -268,22 +308,18 @@ class Cube {
 
     // Hit this mine cube.
     if (this.isMine) {
-      this.cubeElement.className += ' hit'
-      this.game.openMineCubes()
-      return this.game.setGameOver()
+      this.setHitted()
+      return this.game.setGameLose()
     }
 
     // Check and open nearby mines when there are no mine cubes surrounding.
     const nearbyMines = this.nearbyMines.length
     if (nearbyMines === 0) {
-      this.openSurroundingCubes()
+      this.openSafeCubes()
     }
 
     // Check if game can be over now.
-    if (this.game.gameCanBeOver){
-      this.game.setGameOver()
-      this.game.openAllCubes()
-    }
+    this.game.gameCanBeOver && this.game.setGameWin()
   }
 
   /**
@@ -305,8 +341,19 @@ class Cube {
    * @memberof Cube
    */
   private bothMousesDown () {
+    this.bothMousesTriggered = true
     this.stopAction = true
     this.setPreviewArea(true)
+  }
+
+  /**
+   * Set this mine cube to hitted status.
+   * 
+   * @private
+   * @memberof Cube
+   */
+  private setHitted () {
+    this.cubeElement.className += ' hit'
   }
 
   /**
@@ -319,7 +366,7 @@ class Cube {
    */
   private setPreviewArea (status = false) {
     this.findNearbyCubes().forEach(item => {
-      if (item) { item.onSelect = status }
+      if (item && !item.flagMark && !item.unknownMark) { item.onSelect = status }
     })
   }
  
@@ -368,12 +415,12 @@ class Cube {
   }
 
   /**
-   * Open surrounding cubes.
-   * Triggered when this cube is a blank one.
-   * 
+   * Open surrounding safe cubes.
+   *
+   * @param {boolean} onlySurrounding
    * @memberof Cube
    */
-  openSurroundingCubes () {
+  openSafeCubes (onlySurrounding = false) {
     const nearbyCubes = this.findNearbyCubes()
     nearbyCubes.forEach(cube => {
       // Skip mine cube, none cube, open cube.
@@ -384,8 +431,31 @@ class Cube {
 
       // Check nearby mines.
       const nearbyMines = cube.nearbyMines.length
-      nearbyMines < 1 && cube.openSurroundingCubes()
+      nearbyMines < 1 && !onlySurrounding && cube.openSafeCubes()
     })
+  }
+
+  /**
+   * Open all surrounding cubes.
+   * 
+   * @memberof Cube
+   */
+  openSurroundingCubes () {
+    const nearbyCubes = this.findNearbyCubes()
+    nearbyCubes.some(cube => {
+      if (!cube || cube.flagMark || cube.unknownMark) { return }
+      cube.isOpen = true
+
+      if (cube.isMine) {
+        cube.setHitted()
+        this.game.setGameLose()
+        return true
+      }
+
+      if (cube.nearbyMines.length < 1) {
+        cube.openSafeCubes()
+      }
+    })    
   }
 
   /**
@@ -550,7 +620,7 @@ class Game {
     const gamepad = this.gamepad
     
     // Refresh rest mines.
-    gamepad.querySelector('.rest-mines').textContent = `Rest mine: ${this.minesToSolve}`
+    gamepad.querySelector('.rest-mines').textContent = `Rest mines: ${this.minesToSolve}`
   }
 
   private setGamepadSize () {
@@ -576,9 +646,10 @@ class Game {
    * @memberof Game
    */
   openMineCubes () {
-    this.cubes.forEach(item => {
-      if (item.isMine) {
-        item.isOpen = true
+    this.cubes.forEach(cube => {
+      if (cube.isMine) {
+        cube.isOpen = true
+        cube.setMineClassName()
       }
     })
   }
@@ -589,8 +660,11 @@ class Game {
    * @memberof Game
    */
   openAllCubes () {
-    this.cubes.forEach(item => {
-      item.isOpen = true
+    this.cubes.forEach(cube => {
+      cube.isOpen = true
+      cube.flagMark = false
+      cube.unknownMark = false
+      if (cube.isMine) { cube.setMineClassName() }
     })
   }
 
@@ -606,13 +680,37 @@ class Game {
   }
 
   /**
-   * Game over young man!
+   * Game is over.
    * 
    * @memberof Game
    */
   setGameOver () {
     console.info('Game over.')
     this.gameIsOver = true
+  }
+
+  /**
+   * You win this game.
+   * 
+   * @memberof Game
+   */
+  setGameWin () {
+    console.log('You win!')
+    this.gamepad.querySelector('.rest-mines').textContent = `You win!`
+    this.setGameOver()
+    this.openAllCubes()
+  }
+
+  /**
+   * Game over young man!
+   * 
+   * @memberof Game
+   */
+  setGameLose () {
+    console.log('Game over young man!')
+    this.gamepad.querySelector('.rest-mines').textContent = `Game over young man!`    
+    this.setGameOver()
+    this.openMineCubes()
   }
 
   /**
