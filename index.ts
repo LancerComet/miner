@@ -23,6 +23,10 @@ class Cube {
   private rightMouseDown: boolean = false
   private stopAction: boolean = false
 
+  private mouseDownEvent = null
+  private mouseUpEvent = null
+  private contextEvent = null
+
   private _isOpen = false
   get isOpen () {
     return this._isOpen
@@ -30,14 +34,26 @@ class Cube {
   set isOpen (newVal) {
     const className = this.cubeElement.className
 
-    this.cubeElement.className = newVal
-      ? className + (className.indexOf('open') < 0 ? ' open' : '')
-      : className.replace(' open', '')
-
-    if (this.isMine) {
+    // Normal case.
+    if (!this.flagMark && !this.unknownMark) {
+      // Set open class name.
       this.cubeElement.className = newVal
-        ? className + ' mine'
-        : className.replace(' mine', '')
+        ? className + (className.indexOf('open') < 0 ? ' open' : '')
+        : className.replace(' open', '')
+
+      // Set mine class name.
+      if (this.isMine) {
+        this.cubeElement.className = newVal
+          ? className + ' mine'
+          : className.replace(' mine', '')
+      }
+
+    // Mark setting case.
+    } else {
+      this.cubeElement.className = this.cubeElement.className.replace(/ (mine|mark)/g, '')
+      this.cubeElement.className = newVal
+        ? this.cubeElement.className + ' mark'
+        : this.cubeElement.className.replace(' mark', '')
     }
 
     this._isOpen = newVal
@@ -49,8 +65,10 @@ class Cube {
     return this._flagMark
   }
   set flagMark (newVal) {
-    this.unknownMark = false
-    this._flagMark = newVal    
+    this._flagMark = newVal
+    if (newVal && this.unknownMark) {
+      this.unknownMark = false
+    }
   }
 
   private _unknownMark = false
@@ -58,8 +76,10 @@ class Cube {
     return this._unknownMark
   }
   set unknownMark (newVal) {
-    this.flagMark = false
     this._unknownMark = newVal
+    if (newVal && this.flagMark) {
+      this.flagMark = false
+    }
   }
 
   /**
@@ -86,10 +106,10 @@ class Cube {
    */
   get label () : string {
     if (!this.isOpen) { return '' }
-
-    return this.isMine
-      ? 'Wow'
-      : (this.nearbyMines.length || '').toString()
+    if (this.flagMark) { return '❗' }
+    if (this.unknownMark) { return '🐸' }
+    if (this.isMine) { return '💣' }
+    return (this.nearbyMines.length || '').toString()
   }
 
   /**
@@ -145,9 +165,14 @@ class Cube {
     element.className = 'mine-cube'
     element.style.width = CUBE_SIZE + 'px'
     element.style.height = CUBE_SIZE + 'px'
-    element.addEventListener('mousedown', this.onMouseDown.bind(this))
-    element.addEventListener('mouseup', this.onMouseUp.bind(this))
-    element.addEventListener('contextmenu', this.onContextMenu.bind(this))
+    element.style.lineHeight = CUBE_SIZE + 'px'
+
+    this.mouseDownEvent = this.onMouseDown.bind(this)
+    this.mouseUpEvent = this.onMouseUp.bind(this)
+    this.contextEvent = this.onContextMenu.bind(this)
+    element.addEventListener('mousedown', this.mouseDownEvent)
+    element.addEventListener('mouseup', this.mouseUpEvent)
+    element.addEventListener('contextmenu', this.contextEvent)
 
     this.cubeElement = element
   }
@@ -186,7 +211,7 @@ class Cube {
     }
 
     if (this.leftMouseDown && this.rightMouseDown) {
-      this.bothMouseClick()
+      this.bothMousesDown()
     }
   }
 
@@ -236,7 +261,7 @@ class Cube {
    */
   private leftMouseUp () {
     // Return when game is over or action is stopped.
-    if (this.game.gameIsOver || this.stopAction) { return }
+    if (this.game.gameIsOver || this.stopAction || this.flagMark || this.unknownMark) { return }
 
     // Open this cube.
     this.isOpen = true
@@ -269,7 +294,8 @@ class Cube {
    * @memberof Cube
    */
   private rightMouseUp () {
-    if (this.stopAction) { return }
+    if (this.stopAction || (this.isOpen && !this.flagMark && !this.unknownMark)) { return }
+    this.setMark()
   }
 
   /**
@@ -278,7 +304,7 @@ class Cube {
    * @private
    * @memberof Cube
    */
-  private bothMouseClick () {
+  private bothMousesDown () {
     this.stopAction = true
     this.setPreviewArea(true)
   }
@@ -299,6 +325,7 @@ class Cube {
  
   /**
    * Context menu event handler.
+   * Only for preventing default behaviors.
    * 
    * @private
    * @param {Event} event 
@@ -307,6 +334,37 @@ class Cube {
    */
   private onContextMenu (event: Event) {
     event.preventDefault()
+  }
+
+  /**
+   * Set mark.
+   * 
+   * @private
+   * @memberof Cube
+   */
+  private setMark () {
+    if (!this.flagMark && !this.unknownMark) {
+      this.flagMark = true
+      this.setCubeElementLabel()
+      this.isOpen = true
+      this.game.refreshUI()
+      return 
+    }
+    
+    if (this.flagMark) {
+      this.unknownMark = true
+      this.setCubeElementLabel()      
+      this.isOpen = true    
+      this.game.refreshUI()        
+      return
+    }
+    
+    if (this.unknownMark) {
+      this.unknownMark = false
+      this.setCubeElementLabel()
+      this.isOpen = false
+      this.game.refreshUI()      
+    }
   }
 
   /**
@@ -340,6 +398,15 @@ class Cube {
     cubeContainer.appendChild(this.cubeElement)
   }
 
+  /**
+   * Destroy this cube.
+   * 
+   * @memberof Cube
+   */
+  destroy () {
+    this.cubeElement.remove()
+  }
+
   constructor ({ x, y, isMine, game }) {
     // Setup basic data.
     this.game = game
@@ -367,7 +434,6 @@ class Game {
   
   width: number = 9
   height: number = 9
-
   totalMines: number = 10
 
   get totalCubes () {
@@ -480,7 +546,7 @@ class Game {
    * @private
    * @memberof Game
    */
-  private refreshUI () {
+  refreshUI () {
     const gamepad = this.gamepad
     
     // Refresh rest mines.
@@ -492,6 +558,17 @@ class Game {
     gamepad.style.width = CUBE_SIZE * this.width + 'px'
     gamepad.style.height = CUBE_SIZE * this.height + 'px'
   }
+
+  /**
+   * Release all cubes in gamepad.
+   * 
+   * @private
+   * @memberof Game
+   */
+  private releaseAllCubes () {
+    this.cubes.forEach(item => item.destroy())
+    this._cubes = []
+  }  
 
   /**
    * Open all mine cubes.
@@ -538,6 +615,19 @@ class Game {
     this.gameIsOver = true
   }
 
+  /**
+   * Start new game.
+   * 
+   * @memberof Game
+   */
+  newGame () {
+    this.releaseAllCubes()
+    this.createCubes()
+    this.setRandomMines()
+    this.setGamepadSize()
+    this.refreshUI()
+  }
+
   constructor ({ width, height, mines, gamepad }) {
     if (width * height < mines) {
       throw new Error('There are too many mines, reduce it to a vaild number.')
@@ -552,9 +642,6 @@ class Game {
       : <HTMLElement> gamepad
 
     // Initialize game.
-    this.createCubes()
-    this.setRandomMines()
-    this.setGamepadSize()
-    this.refreshUI()
+    this.newGame()
   }
 }

@@ -20,6 +20,9 @@ var Cube = (function () {
         this.leftMouseDown = false;
         this.rightMouseDown = false;
         this.stopAction = false;
+        this.mouseDownEvent = null;
+        this.mouseUpEvent = null;
+        this.contextEvent = null;
         this._isOpen = false;
         this._flagMark = false;
         this._unknownMark = false;
@@ -45,13 +48,25 @@ var Cube = (function () {
         },
         set: function (newVal) {
             var className = this.cubeElement.className;
-            this.cubeElement.className = newVal
-                ? className + (className.indexOf('open') < 0 ? ' open' : '')
-                : className.replace(' open', '');
-            if (this.isMine) {
+            // Normal case.
+            if (!this.flagMark && !this.unknownMark) {
+                // Set open class name.
                 this.cubeElement.className = newVal
-                    ? className + ' mine'
-                    : className.replace(' mine', '');
+                    ? className + (className.indexOf('open') < 0 ? ' open' : '')
+                    : className.replace(' open', '');
+                // Set mine class name.
+                if (this.isMine) {
+                    this.cubeElement.className = newVal
+                        ? className + ' mine'
+                        : className.replace(' mine', '');
+                }
+                // Mark setting case.
+            }
+            else {
+                this.cubeElement.className = this.cubeElement.className.replace(/ (mine|mark)/g, '');
+                this.cubeElement.className = newVal
+                    ? this.cubeElement.className + ' mark'
+                    : this.cubeElement.className.replace(' mark', '');
             }
             this._isOpen = newVal;
             this.setCubeElementLabel();
@@ -64,8 +79,10 @@ var Cube = (function () {
             return this._flagMark;
         },
         set: function (newVal) {
-            this.unknownMark = false;
             this._flagMark = newVal;
+            if (newVal && this.unknownMark) {
+                this.unknownMark = false;
+            }
         },
         enumerable: true,
         configurable: true
@@ -75,8 +92,10 @@ var Cube = (function () {
             return this._unknownMark;
         },
         set: function (newVal) {
-            this.flagMark = false;
             this._unknownMark = newVal;
+            if (newVal && this.flagMark) {
+                this.flagMark = false;
+            }
         },
         enumerable: true,
         configurable: true
@@ -104,9 +123,16 @@ var Cube = (function () {
             if (!this.isOpen) {
                 return '';
             }
-            return this.isMine
-                ? 'Wow'
-                : (this.nearbyMines.length || '').toString();
+            if (this.flagMark) {
+                return '❗';
+            }
+            if (this.unknownMark) {
+                return '🐸';
+            }
+            if (this.isMine) {
+                return '💣';
+            }
+            return (this.nearbyMines.length || '').toString();
         },
         enumerable: true,
         configurable: true
@@ -168,9 +194,13 @@ var Cube = (function () {
         element.className = 'mine-cube';
         element.style.width = CUBE_SIZE + 'px';
         element.style.height = CUBE_SIZE + 'px';
-        element.addEventListener('mousedown', this.onMouseDown.bind(this));
-        element.addEventListener('mouseup', this.onMouseUp.bind(this));
-        element.addEventListener('contextmenu', this.onContextMenu.bind(this));
+        element.style.lineHeight = CUBE_SIZE + 'px';
+        this.mouseDownEvent = this.onMouseDown.bind(this);
+        this.mouseUpEvent = this.onMouseUp.bind(this);
+        this.contextEvent = this.onContextMenu.bind(this);
+        element.addEventListener('mousedown', this.mouseDownEvent);
+        element.addEventListener('mouseup', this.mouseUpEvent);
+        element.addEventListener('contextmenu', this.contextEvent);
         this.cubeElement = element;
     };
     /**
@@ -203,7 +233,7 @@ var Cube = (function () {
                 break;
         }
         if (this.leftMouseDown && this.rightMouseDown) {
-            this.bothMouseClick();
+            this.bothMousesDown();
         }
     };
     /**
@@ -248,7 +278,7 @@ var Cube = (function () {
      */
     Cube.prototype.leftMouseUp = function () {
         // Return when game is over or action is stopped.
-        if (this.game.gameIsOver || this.stopAction) {
+        if (this.game.gameIsOver || this.stopAction || this.flagMark || this.unknownMark) {
             return;
         }
         // Open this cube.
@@ -278,9 +308,10 @@ var Cube = (function () {
      * @memberof Cube
      */
     Cube.prototype.rightMouseUp = function () {
-        if (this.stopAction) {
+        if (this.stopAction || (this.isOpen && !this.flagMark && !this.unknownMark)) {
             return;
         }
+        this.setMark();
     };
     /**
      * Both mouses click.
@@ -288,7 +319,7 @@ var Cube = (function () {
      * @private
      * @memberof Cube
      */
-    Cube.prototype.bothMouseClick = function () {
+    Cube.prototype.bothMousesDown = function () {
         this.stopAction = true;
         this.setPreviewArea(true);
     };
@@ -310,6 +341,7 @@ var Cube = (function () {
     };
     /**
      * Context menu event handler.
+     * Only for preventing default behaviors.
      *
      * @private
      * @param {Event} event
@@ -318,6 +350,34 @@ var Cube = (function () {
      */
     Cube.prototype.onContextMenu = function (event) {
         event.preventDefault();
+    };
+    /**
+     * Set mark.
+     *
+     * @private
+     * @memberof Cube
+     */
+    Cube.prototype.setMark = function () {
+        if (!this.flagMark && !this.unknownMark) {
+            this.flagMark = true;
+            this.setCubeElementLabel();
+            this.isOpen = true;
+            this.game.refreshUI();
+            return;
+        }
+        if (this.flagMark) {
+            this.unknownMark = true;
+            this.setCubeElementLabel();
+            this.isOpen = true;
+            this.game.refreshUI();
+            return;
+        }
+        if (this.unknownMark) {
+            this.unknownMark = false;
+            this.setCubeElementLabel();
+            this.isOpen = false;
+            this.game.refreshUI();
+        }
     };
     /**
      * Open surrounding cubes.
@@ -348,6 +408,14 @@ var Cube = (function () {
         var cubeContainer = this.game.gamepad.querySelector('.cubes-ctnr');
         cubeContainer.appendChild(this.cubeElement);
     };
+    /**
+     * Destroy this cube.
+     *
+     * @memberof Cube
+     */
+    Cube.prototype.destroy = function () {
+        this.cubeElement.remove();
+    };
     return Cube;
 }());
 /**
@@ -376,10 +444,7 @@ var Game = (function () {
             ? document.querySelector(gamepad)
             : gamepad;
         // Initialize game.
-        this.createCubes();
-        this.setRandomMines();
-        this.setGamepadSize();
-        this.refreshUI();
+        this.newGame();
     }
     Object.defineProperty(Game.prototype, "totalCubes", {
         get: function () {
@@ -510,6 +575,16 @@ var Game = (function () {
         gamepad.style.height = CUBE_SIZE * this.height + 'px';
     };
     /**
+     * Release all cubes in gamepad.
+     *
+     * @private
+     * @memberof Game
+     */
+    Game.prototype.releaseAllCubes = function () {
+        this.cubes.forEach(function (item) { return item.destroy(); });
+        this._cubes = [];
+    };
+    /**
      * Open all mine cubes.
      *
      * @memberof Game
@@ -549,6 +624,18 @@ var Game = (function () {
     Game.prototype.setGameOver = function () {
         console.info('Game over.');
         this.gameIsOver = true;
+    };
+    /**
+     * Start new game.
+     *
+     * @memberof Game
+     */
+    Game.prototype.newGame = function () {
+        this.releaseAllCubes();
+        this.createCubes();
+        this.setRandomMines();
+        this.setGamepadSize();
+        this.refreshUI();
     };
     return Game;
 }());
